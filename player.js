@@ -330,10 +330,17 @@ class StreamFlowPlayer {
         // Check if proxy should be used
         const useProxy = this.useProxyCheckbox && this.useProxyCheckbox.checked;
         if (useProxy) {
-            // Use local proxy server (run server.js with node)
-            url = `http://localhost:4000/proxy?url=${encodeURIComponent(url)}`;
-            console.log('🔄 Using local proxy server for URL');
+            const isCasting =
+                cast.framework.CastContext.getInstance()
+                    .getCurrentSession();
+
+            const proxyBase = isCasting
+                ? "https://movie-streamer.onrender.com"
+                : "http://localhost:4000";
+
+            url = `${proxyBase}/proxy?url=${encodeURIComponent(url)}`;
         }
+
 
         this.currentUrl = url;
         this.originalUrl = this.urlInput.value.trim(); // Store original for display

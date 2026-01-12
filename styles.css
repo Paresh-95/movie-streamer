@@ -214,6 +214,20 @@ body {
     overflow: hidden;
 }
 
+
+google-cast-launcher {
+  width: 24px;
+  height: 24px;
+  display: inline-block;
+}
+
+#castBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
 /* URL Section */
 .url-section {
     width: 100%;

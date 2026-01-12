@@ -510,20 +510,28 @@ class StreamFlowPlayer {
                     (event) => this.onCastSessionChange(event)
                 );
 
-                // Listen for Cast availability
+                // Listen for Cast state changes (device availability)
                 castContext.addEventListener(
                     cast.framework.CastContextEventType.CAST_STATE_CHANGED,
                     (event) => {
-                        if (event.castState === chrome.cast.SessionState.SESSION_STARTED) {
-                            console.log('📡 Cast device available');
-                        }
+                        console.log('📡 Cast state changed:', event.castState);
+                        // Update device list when cast state changes
+                        this.updateCastDevicesList();
                     }
                 );
 
                 console.log("✅ Google Cast initialized and ready");
                 
-                // Update Cast button UI
+                // Initial update
                 this.updateCastButton();
+                this.updateCastDevicesList();
+                
+                // Poll for device changes every 2 seconds
+                setInterval(() => {
+                    if (this.castDeviceMenu && this.castDeviceMenu.classList.contains('active')) {
+                        this.updateCastDevicesList();
+                    }
+                }, 2000);
                 
             } catch (error) {
                 console.error('Cast initialization error:', error);
@@ -547,42 +555,26 @@ class StreamFlowPlayer {
 
     updateCastDevicesList() {
         const castContext = cast.framework.CastContext.getInstance();
-        const castState = castContext.getCastState();
-
-        // Get available devices
-        if (castState === chrome.cast.SessionState.SESSION_STARTED) {
-            const session = castContext.getCurrentSession();
-            if (session) {
-                const deviceName = session.receiver.displayName;
-                this.castDevicesList.innerHTML = `
-                    <div class="cast-device-item active">
-                        ${deviceName}
-                        <span style="margin-left: auto; font-size: 0.75rem; color: var(--accent-primary);">✓ Connected</span>
-                    </div>
-                `;
-                return;
-            }
-        }
-
-        // Show available devices or waiting message
-        if (castState === chrome.cast.SessionState.NOT_CONNECTED) {
+        
+        // Check if there's an active session first
+        const session = castContext.getCurrentSession();
+        if (session) {
+            const deviceName = session.receiver.displayName || 'Connected Device';
             this.castDevicesList.innerHTML = `
-                <div style="padding: 12px 16px; text-align: center; color: var(--text-tertiary); font-size: 0.85rem;">
-                    🔍 Searching for Cast devices...
+                <div class="cast-device-item active">
+                    ${deviceName}
+                    <span style="margin-left: auto; font-size: 0.75rem; color: var(--accent-primary);">✓ Connected</span>
                 </div>
             `;
-        } else if (castState === chrome.cast.SessionState.NO_DEVICES_AVAILABLE) {
-            this.castDevicesList.innerHTML = `
-                <div class="cast-no-devices">
-                    No Cast devices available. Make sure:
-                    <ul style="font-size: 0.75rem; margin: 8px 0; padding-left: 20px; color: var(--text-tertiary);">
-                        <li>Your Cast device is powered on</li>
-                        <li>It's on the same WiFi network</li>
-                        <li>Google Cast is enabled</li>
-                    </ul>
-                </div>
-            `;
+            return;
         }
+
+        // Show scanning message - let Chrome's Cast framework handle device discovery
+        this.castDevicesList.innerHTML = `
+            <div style="padding: 12px 16px; text-align: center; color: var(--text-tertiary); font-size: 0.85rem;">
+                🔍 Scanning for Cast devices...
+            </div>
+        `;
     }
 
     disconnectCast() {

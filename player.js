@@ -735,8 +735,17 @@ class StreamFlowPlayer {
     }
 
     skip(seconds) {
-        const newTime = this.video.currentTime + seconds;
-        this.seekToTime(newTime);
+        // Ensure we have a valid duration and currentTime before skipping
+        if (!this.video || !isFinite(this.video.duration)) {
+            console.warn('Skip requested before metadata loaded');
+            return;
+        }
+
+        const cur = isFinite(this.video.currentTime) ? this.video.currentTime : 0;
+        const target = cur + seconds;
+        const clamped = Math.max(0, Math.min(target, this.video.duration));
+
+        this.seekToTime(clamped);
 
         // Show seek indicator
         this.showSeekIndicator(seconds);
@@ -872,16 +881,24 @@ class StreamFlowPlayer {
 
 
     seekToTime(targetTime) {
-        if (!this.video.duration) return;
+        // Validate video and targetTime
+        if (!this.video || !isFinite(this.video.duration)) return;
+        if (typeof targetTime !== 'number' || !isFinite(targetTime)) {
+            console.warn('Invalid seek target:', targetTime);
+            return;
+        }
+
+        // Clamp to valid range
+        const clamped = Math.max(0, Math.min(targetTime, this.video.duration));
 
         // Check if target is within buffered range
-        const isBuffered = this.isTimeBuffered(targetTime);
+        const isBuffered = this.isTimeBuffered(clamped);
 
         if (!isBuffered) {
             // Show loading indicator for unbuffered seek
             this.showLoading();
 
-            const timeStr = this.formatTime(targetTime);
+            const timeStr = this.formatTime(clamped);
 
             if (this.supportsRangeRequests === false) {
                 console.warn(`⚠️ Seeking to ${timeStr} - server may not support Range requests`);
@@ -890,13 +907,17 @@ class StreamFlowPlayer {
             }
 
             // For Google URLs, add a note
-            const isGoogleUrl = this.currentUrl.includes('googleusercontent.com');
-            if (isGoogleUrl && !isBuffered) {
+            const isGoogleUrl = (this.currentUrl || '').includes('googleusercontent.com');
+            if (isGoogleUrl) {
                 console.log(`📥 Note: Google URLs support seeking, but may expire soon`);
             }
         }
 
-        this.video.currentTime = Math.max(0, Math.min(targetTime, this.video.duration));
+        try {
+            this.video.currentTime = clamped;
+        } catch (err) {
+            console.warn('Seek failed:', err);
+        }
     }
 
     isTimeBuffered(time) {

@@ -251,9 +251,27 @@
                                 </button>
 
                                 <!-- Google Cast Button -->
-                                <button class="ctrl-btn" id="castBtn" title="Cast to TV">
-                                    <google-cast-launcher></google-cast-launcher>
-                                </button>
+                                <div class="cast-button-container">
+                                    <button class="ctrl-btn" id="castBtn" title="Cast to TV">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <!-- Cast Icon -->
+                                            <path d="M2 16.1A5 5 0 0 1 5.9 13M2 12.05A9 9 0 0 1 9.95 13m7.07-6.06A10 10 0 0 1 21.95 13M2 8v5a9 9 0 0 0 18 0V8" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+
+                                    <!-- Cast Device Menu (appears when hovering) -->
+                                    <div class="cast-device-menu" id="castDeviceMenu">
+                                        <div class="cast-menu-header">Available Devices</div>
+                                        <div class="cast-devices-list" id="castDevicesList">
+                                            <div class="cast-no-devices">No devices found. Make sure:</div>
+                                            <ul style="font-size: 0.85rem; margin: 8px 0; padding-left: 20px; color: var(--text-tertiary);">
+                                                <li>Your Cast device is on and nearby</li>
+                                                <li>Device is on the same WiFi network</li>
+                                                <li>Google Cast is enabled in your browser</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
 
 
                                 <!-- Fullscreen -->

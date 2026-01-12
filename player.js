@@ -89,6 +89,15 @@ class StreamFlowPlayer {
         this.supportsRangeRequests = null; // null = unknown, true/false after check
         this.rangeRequestChecked = false;
 
+        // Google Cast state
+        this.castSession = null;
+        this.isCasting = false;
+        this.castButton = null;
+        this.castStatusEl = null;
+        this.castDeviceMenu = null;
+        this.castDevicesList = null;
+        this.availableCastDevices = [];
+
         this.init();
     }
 
@@ -212,6 +221,27 @@ class StreamFlowPlayer {
         document.addEventListener('click', () => {
             this.speedMenu.classList.remove('active');
         });
+
+        // Cast Device Menu
+        const castBtn = document.getElementById('castBtn');
+        this.castDeviceMenu = document.getElementById('castDeviceMenu');
+        this.castDevicesList = document.getElementById('castDevicesList');
+        const castButtonContainer = document.querySelector('.cast-button-container');
+
+        if (castBtn && this.castDeviceMenu) {
+            castBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.castDeviceMenu.classList.toggle('active');
+                this.updateCastDevicesList();
+            });
+
+            // Close menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!castButtonContainer.contains(e.target)) {
+                    this.castDeviceMenu.classList.remove('active');
+                }
+            });
+        }
 
         // Shortcuts Modal
         this.closeShortcuts.addEventListener('click', () => {
@@ -415,40 +445,157 @@ class StreamFlowPlayer {
         }, 10000); // 10 second timeout
     }
     onCastSessionChange(event) {
+        const castContext = cast.framework.CastContext.getInstance();
+        
         switch (event.sessionState) {
             case cast.framework.SessionState.SESSION_STARTED:
             case cast.framework.SessionState.SESSION_RESUMED:
-                console.log("📺 Cast connected");
-                this.castCurrentVideo();
+                console.log("📺 Cast connected to device");
+                this.castSession = castContext.getCurrentSession();
+                this.isCasting = true;
+                this.updateCastButton();
+                
+                // Sync current video to Cast device
+                if (this.currentUrl && this.video.duration > 0) {
+                    this.castCurrentVideo();
+                }
                 break;
 
             case cast.framework.SessionState.SESSION_ENDED:
                 console.log("❌ Cast disconnected");
+                this.castSession = null;
+                this.isCasting = false;
+                this.updateCastButton();
                 break;
+        }
+    }
+
+    updateCastButton() {
+        const castBtn = document.getElementById('castBtn');
+        if (!castBtn) return;
+
+        if (this.isCasting) {
+            castBtn.classList.add('active');
+            castBtn.title = 'Currently casting to device (Click to disconnect)';
+        } else {
+            castBtn.classList.remove('active');
+            castBtn.title = 'Cast to TV (Click to select device)';
         }
     }
 
 
     initCast() {
+        // This function is called when the Google Cast API is available
         window.__onGCastApiAvailable = (isAvailable) => {
-            if (!isAvailable) return;
+            if (!isAvailable) {
+                console.warn('Google Cast API not available in your region');
+                return;
+            }
 
-            const context = cast.framework.CastContext.getInstance();
-            context.setOptions({
-                receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-                autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
-            });
+            try {
+                const castContext = cast.framework.CastContext.getInstance();
+                
+                // Configure Cast receiver
+                castContext.setOptions({
+                    receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                    autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+                    sessionRequest: new chrome.cast.SessionRequest(
+                        chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID
+                    )
+                });
 
-            context.addEventListener(
-                cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-                (event) => this.onCastSessionChange(event)
-            );
+                // Listen for session state changes
+                castContext.addEventListener(
+                    cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+                    (event) => this.onCastSessionChange(event)
+                );
 
-            console.log("✅ Google Cast ready");
+                // Listen for Cast availability
+                castContext.addEventListener(
+                    cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+                    (event) => {
+                        if (event.castState === chrome.cast.SessionState.SESSION_STARTED) {
+                            console.log('📡 Cast device available');
+                        }
+                    }
+                );
+
+                console.log("✅ Google Cast initialized and ready");
+                
+                // Update Cast button UI
+                this.updateCastButton();
+                
+            } catch (error) {
+                console.error('Cast initialization error:', error);
+            }
         };
-
     }
 
+
+    updateCastButton() {
+        const castBtn = document.getElementById('castBtn');
+        if (!castBtn) return;
+
+        if (this.isCasting) {
+            castBtn.classList.add('active');
+            castBtn.title = 'Currently casting to device (Click to disconnect)';
+        } else {
+            castBtn.classList.remove('active');
+            castBtn.title = 'Cast to TV (Click to select device)';
+        }
+    }
+
+    updateCastDevicesList() {
+        const castContext = cast.framework.CastContext.getInstance();
+        const castState = castContext.getCastState();
+
+        // Get available devices
+        if (castState === chrome.cast.SessionState.SESSION_STARTED) {
+            const session = castContext.getCurrentSession();
+            if (session) {
+                const deviceName = session.receiver.displayName;
+                this.castDevicesList.innerHTML = `
+                    <div class="cast-device-item active">
+                        ${deviceName}
+                        <span style="margin-left: auto; font-size: 0.75rem; color: var(--accent-primary);">✓ Connected</span>
+                    </div>
+                `;
+                return;
+            }
+        }
+
+        // Show available devices or waiting message
+        if (castState === chrome.cast.SessionState.NOT_CONNECTED) {
+            this.castDevicesList.innerHTML = `
+                <div style="padding: 12px 16px; text-align: center; color: var(--text-tertiary); font-size: 0.85rem;">
+                    🔍 Searching for Cast devices...
+                </div>
+            `;
+        } else if (castState === chrome.cast.SessionState.NO_DEVICES_AVAILABLE) {
+            this.castDevicesList.innerHTML = `
+                <div class="cast-no-devices">
+                    No Cast devices available. Make sure:
+                    <ul style="font-size: 0.75rem; margin: 8px 0; padding-left: 20px; color: var(--text-tertiary);">
+                        <li>Your Cast device is powered on</li>
+                        <li>It's on the same WiFi network</li>
+                        <li>Google Cast is enabled</li>
+                    </ul>
+                </div>
+            `;
+        }
+    }
+
+    disconnectCast() {
+        const castContext = cast.framework.CastContext.getInstance();
+        const session = castContext.getCurrentSession();
+        if (session) {
+            session.end(true);
+            this.isCasting = false;
+            this.castSession = null;
+            this.updateCastButton();
+            this.showCastNotification('Disconnected from Cast device');
+        }
+    }
 
     async checkRangeRequestSupport(url) {
         this.rangeRequestChecked = true;
@@ -555,22 +702,33 @@ class StreamFlowPlayer {
     }
 
     togglePlay() {
-        const session = cast.framework.CastContext.getInstance().getCurrentSession();
+        const castContext = cast.framework.CastContext.getInstance();
+        const session = castContext.getCurrentSession();
 
-        // If casting, control TV
-        if (session && session.getMediaSession()) {
+        // If casting, control remote device
+        if (session && session.getMediaSession && session.getMediaSession()) {
             const media = session.getMediaSession();
-            if (media.playerState === chrome.cast.media.PlayerState.PLAYING) {
-                media.pause();
-            } else {
-                media.play();
+            try {
+                if (media.playerState === chrome.cast.media.PlayerState.PLAYING) {
+                    media.pause(null, () => {
+                        console.log('⏸️ Paused on Cast device');
+                    });
+                } else {
+                    media.play(null, () => {
+                        console.log('▶️ Playing on Cast device');
+                    });
+                }
+            } catch (error) {
+                console.error('Cast control error:', error);
             }
             return;
         }
 
         // Local playback
         if (this.video.paused) {
-            this.video.play().catch(() => { });
+            this.video.play().catch((err) => {
+                console.error('Playback error:', err);
+            });
         } else {
             this.video.pause();
         }
@@ -607,32 +765,109 @@ class StreamFlowPlayer {
     }
 
     castCurrentVideo() {
-        const session = cast.framework.CastContext.getInstance().getCurrentSession();
-        if (!session || !this.currentUrl) return;
+        const castContext = cast.framework.CastContext.getInstance();
+        const session = castContext.getCurrentSession();
+        
+        if (!session || !this.currentUrl) {
+            console.warn('No active Cast session or video URL');
+            return;
+        }
 
-        const mediaInfo = new chrome.cast.media.MediaInfo(
-            this.currentUrl,
-            "video/mp4"
-        );
+        try {
+            // Detect video format
+            let mimeType = 'video/mp4';
+            if (this.currentUrl.includes('.webm')) {
+                mimeType = 'video/webm';
+            } else if (this.currentUrl.includes('.ogg') || this.currentUrl.includes('.ogv')) {
+                mimeType = 'video/ogg';
+            } else if (this.currentUrl.includes('.m3u8')) {
+                mimeType = 'application/x-mpegURL'; // HLS
+            } else if (this.currentUrl.includes('.mpd')) {
+                mimeType = 'application/dash+xml'; // DASH
+            }
 
-        const metadata = new chrome.cast.media.GenericMediaMetadata();
-        metadata.title = "StreamFlow";
-        metadata.subtitle = this.originalUrl || this.currentUrl;
+            const mediaInfo = new chrome.cast.media.MediaInfo(
+                this.currentUrl,
+                mimeType
+            );
 
-        mediaInfo.metadata = metadata;
-        mediaInfo.streamType = chrome.cast.media.StreamType.BUFFERED;
+            // Create metadata for better display on TV
+            const metadata = new chrome.cast.media.GenericMediaMetadata();
+            metadata.title = "StreamFlow Player";
+            metadata.subtitle = this.originalUrl ? decodeURIComponent(this.originalUrl) : 'Streaming Video';
+            metadata.images = [
+                new chrome.cast.media.Image('https://via.placeholder.com/200x200?text=StreamFlow')
+            ];
 
-        const request = new chrome.cast.media.LoadRequest(mediaInfo);
-        request.currentTime = this.video.currentTime || 0;
-        request.autoplay = true;
+            mediaInfo.metadata = metadata;
+            mediaInfo.streamType = chrome.cast.media.StreamType.BUFFERED;
+            mediaInfo.duration = this.video.duration || 0;
 
-        session.loadMedia(request).then(
-            () => {
-                console.log("▶ Casting started");
-                this.video.pause(); // stop local playback
-            },
-            (err) => console.error("❌ Cast load failed", err)
-        );
+            // Create load request
+            const request = new chrome.cast.media.LoadRequest(mediaInfo);
+            request.currentTime = Math.max(0, this.video.currentTime - 1); // Start 1 second before current
+            request.autoplay = true;
+
+            // Load media on Cast device
+            session.loadMedia(request).then(
+                (media) => {
+                    console.log("✅ Video casting started");
+                    console.log(`📺 Playing on: ${session.receiver.displayName}`);
+                    
+                    // Pause local playback
+                    this.video.pause();
+                    this.isPlaying = false;
+                    this.playerContainer.classList.remove('playing');
+                    
+                    // Show notification
+                    this.showCastNotification(`Casting to ${session.receiver.displayName}`);
+                },
+                (err) => {
+                    console.error("❌ Failed to start casting:", err);
+                    if (err.code === 'CANCEL') {
+                        console.log('Cast cancelled by user');
+                    } else {
+                        this.showError(`Casting failed: ${err.description || err}`);
+                    }
+                }
+            );
+        } catch (error) {
+            console.error('Cast error:', error);
+            this.showError('Unable to cast video: ' + error.message);
+        }
+    }
+
+    showCastNotification(message) {
+        const notification = document.createElement('div');
+        notification.className = 'cast-notification';
+        notification.innerHTML = `
+            <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 11v-2c-1.66 0-3 1.34-3 3h2c0-.55.45-1 1-1zm0-4v-2c-2.76 0-5 2.24-5 5h2c0-1.66 1.34-3 3-3zm0-4V3c-3.87 0-7 3.13-7 7h2c0-2.76 2.24-5 5-5z" fill="currentColor"/>
+            </svg>
+            <span>${message}</span>
+        `;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: rgba(0, 245, 212, 0.95);
+            color: #000;
+            border-radius: 8px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            animation: slideInRight 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        `;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.animation = 'fadeOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
     }
 
 
